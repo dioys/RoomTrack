@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Sliders with Values and Numbers</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    #totalBox {
+      display: inline-block;
+      margin-left: 20px;
+      font-family: 'Inter', sans-serif;
+      font-size: 16px;
+      font-weight: 600;
+      color: #333;
+      background: #f0f0f0;
+      padding: 8px 12px;
+      border-radius: 6px;
+    }
+    .old-value {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #ffd89b;
+      margin-top: 10px;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+    }
+  </style>
+</head>
+<body>
+<div style="display: flex; gap: 32px; align-items: flex-start;">
+  <div style="flex: 0 0 260px;">
+    <h2 style="text-align: left;">Input Grid</h2>
+    <div class="grid" id="inputGrid"></div>
+  </div>
+
+  <div style="flex: 1;">
+    <h2>Graph <span id="totalBox">Total: 0</span></h2>
+    <canvas id="myChart"></canvas>
+
+    <h2>Sliders</h2>
+    <div class="slider-grid" id="sliderGrid"></div>
+  </div>
+</div>
+<div style="text-align: center; margin-top: -250px;">
+
+  <button id="saveBtn" onclick="saveToCSV()" style="
+    background-color: #8B5E3C;
+    color: #fff3e0;
+    border: none;
+    padding: 12px 28px;
+    font-size: 16px;
+    font-family: 'Garamond', serif;
+    border-radius: 8px;
+    cursor: pointer;
+    box-shadow: 2px 2px 6px rgba(0,0,0,0.3);
+    transition: background-color 0.3s ease;">
+    Save
+  </button>
+</div>
+
+<script>
+  const maxVal = 100000;
+  let values = Array.from({ length: 24 }, () => 0);
+  let oldValues = Array.from({ length: 24 }, () => 0);
+  const positions = Array.from({ length: 24 }, (_, i) => i + 1);
+  const inputGrid = document.getElementById('inputGrid');
+  const sliderGrid = document.getElementById('sliderGrid');
+  const totalBox = document.getElementById('totalBox');
+
+  function padOrTrim(arr) {
+    return Array.from({ length: 24 }, (_, i) => parseInt(arr[i]) || 0);
+  }
+
+  function updateTotalBox() {
+    const total = values.reduce((sum, val) => sum + val, 0);
+    totalBox.innerText = `Total: ${total.toLocaleString()}`;
+  }
+
+  function updateDifferenceLabel(i) {
+    const diff = values[i] - oldValues[i];
+    const diffLabel = document.getElementById(`diff-${i}`);
+    if (diffLabel) {
+      diffLabel.innerText = diff > 0 ? `+${diff}` : diff.toString();
+    }
+    updateTotalBox();
+  }
+
+  function parsePastedData(pasteData) {
+    const cleaned = pasteData.trim();
+    let parts = [];
+
+    if (cleaned.includes('\n')) {
+      // Vertical paste
+      parts = cleaned.split('\n').map(s => parseInt(s.trim(), 10));
+    } else {
+      // Horizontal paste
+      parts = cleaned.split(/\t|,|\s+/).map(s => parseInt(s.trim(), 10));
+    }
+
+    const validValues = parts.filter(val => !isNaN(val)).slice(0, 24);
+    while (validValues.length < 24) validValues.push(0);
+    return validValues;
+  }
+
+  function renderUI() {
+    inputGrid.innerHTML = '';
+    sliderGrid.innerHTML = '';
+
+    for (let i = 0; i < 24; i++) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'input-wrapper';
+
+      const posLabel = document.createElement('div');
+      posLabel.className = 'position-label';
+      posLabel.innerText = i + 1;
+
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.min = 0;
+      input.max = maxVal;
+      input.value = values[i];
+      input.id = `input-${i}`;
+
+      input.addEventListener('paste', (event) => {
+        event.preventDefault();
+        const pasteData = (event.clipboardData || window.clipboardData).getData('text');
+        const newVals = parsePastedData(pasteData);
+        values = [...newVals];
+
+        for (let j = 0; j < 24; j++) {
+          document.getElementById(`input-${j}`).value = values[j];
+          document.getElementById(`slider-${j}`).value = values[j];
+          document.getElementById(`value-top-${j}`).innerText = values[j].toLocaleString();
+          updateDifferenceLabel(j);
+        }
+        updateChart();
+      });
+
+      input.addEventListener('input', () => {
+        let val = parseInt(input.value, 10);
+        if (isNaN(val)) val = 0;
+        val = Math.min(Math.max(val, 0), maxVal);
+        values[i] = val;
+        document.getElementById(`slider-${i}`).value = val;
+        document.getElementById(`value-top-${i}`).innerText = val.toLocaleString();
+        updateDifferenceLabel(i);
+        updateChart();
+      });
+
+      const oldValue = document.createElement('div');
+      oldValue.className = 'old-value';
+      oldValue.innerText = `Previous: ${oldValues[i].toLocaleString()}`;
+
+      wrapper.appendChild(posLabel);
+      wrapper.appendChild(input);
+      wrapper.appendChild(oldValue);
+      inputGrid.appendChild(wrapper);
+
+      const sliderWrapper = document.createElement('div');
+      sliderWrapper.className = 'slider-container';
+
+      const valueTop = document.createElement('div');
+      valueTop.className = 'value-label';
+      valueTop.id = `value-top-${i}`;
+      valueTop.innerText = values[i].toLocaleString();
+
+      const slider = document.createElement('input');
+      slider.type = 'range';
+      slider.className = 'slider';
+      slider.min = 0;
+      slider.max = maxVal;
+      slider.value = values[i];
+      slider.id = `slider-${i}`;
+
+      slider.addEventListener('input', () => {
+        values[i] = parseInt(slider.value, 10);
+        document.getElementById(`input-${i}`).value = values[i];
+        document.getElementById(`value-top-${i}`).innerText = values[i].toLocaleString();
+        updateDifferenceLabel(i);
+        updateChart();
+      });
+
+      const diffLabel = document.createElement('div');
+      diffLabel.className = 'difference-label';
+      diffLabel.id = `diff-${i}`;
+      diffLabel.innerText = (values[i] - oldValues[i]).toString();
+
+      sliderWrapper.appendChild(valueTop);
+      sliderWrapper.appendChild(slider);
+      sliderWrapper.appendChild(diffLabel);
+      sliderGrid.appendChild(sliderWrapper);
+    }
+
+    updateTotalBox();
+  }
+
+  const ctx = document.getElementById('myChart').getContext('2d');
+
+  const drawValuesAboveDataPoints = {
+    id: 'drawValuesAboveDataPoints',
+    afterDatasetsDraw(chart) {
+      const ctx = chart.ctx;
+      ctx.save();
+      ctx.font = 'bold 13px "Inter", "Helvetica Neue", Arial, sans-serif';
+      ctx.textAlign = 'center';
+
+      const datasetCurrent = chart.data.datasets[0];
+      const metaCurrent = chart.getDatasetMeta(0);
+      ctx.fillStyle = '#00d4ff';
+      metaCurrent.data.forEach((point, index) => {
+        const val = datasetCurrent.data[index];
+        if (val != null) ctx.fillText(val.toLocaleString(), point.x, point.y + 11);
+      });
+
+      const datasetPrevious = chart.data.datasets[1];
+      const metaPrevious = chart.getDatasetMeta(1);
+      ctx.fillStyle = '#ff6b6b';
+      ctx.textAlign = 'left';
+      metaPrevious.data.forEach((point, index) => {
+        const val = datasetPrevious.data[index];
+        if (val != null) ctx.fillText(val.toLocaleString(), point.x + 12, point.y + 4);
+      });
+
+      ctx.restore();
+    }
+  };
+
+  const chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: positions,
+      datasets: [
+        {
+          label: 'Current Data',
+          data: values,
+          borderColor: '#00d4ff',
+          backgroundColor: 'rgba(0, 212, 255, 0.3)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 6,
+          pointHoverRadius: 8,
+          borderWidth: 3
+        },
+        {
+          label: 'Previous Data',
+          data: oldValues,
+          borderColor: '#ff6b6b',
+          backgroundColor: 'rgba(255, 107, 107, 0.1)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          borderWidth: 2
+        }
+      ]
+    },
+    options: {
+      animation: { duration: 800, easing: 'easeOutQuart' },
+      responsive: true,
+      plugins: {
+        legend: { display: true },
+        tooltip: {
+          callbacks: {
+            label: ctx => `${ctx.dataset.label}: ${ctx.raw.toLocaleString()}`
+          }
+        }
+      },
+      scales: {
+        x: {
+          title: {
+            display: true,
+            text: 'Position (1–24)',
+            color: '#00d4ff'
+          },
+          ticks: {
+            color: '#e0e0e0'
+          },
+          grid: { color: 'rgba(255, 255, 255, 0.1)' }
+        },
+        y: {
+          beginAtZero: true,
+          max: maxVal,
+          title: {
+            display: true,
+            text: 'Value (0–100,000)',
+            color: '#00d4ff'
+          },
+          ticks: {
+            color: '#e0e0e0',
+            callback: val => val.toLocaleString()
+          },
+          grid: { color: 'rgba(255, 255, 255, 0.1)' }
+        }
+      }
+    },
+    plugins: [drawValuesAboveDataPoints]
+  });
+
+  function updateChart() {
+    chart.data.datasets[0].data = [...values];
+    chart.data.datasets[1].data = [...oldValues];
+    chart.update();
+  }
+
+  function saveToCSV() {
+    const formData = new FormData();
+    formData.append('values', JSON.stringify(values));
+    fetch('write.php', {
+      method: 'POST',
+      body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        alert('Data saved successfully!');
+        oldValues = [...values];
+        renderUI();
+        updateChart();
+      } else {
+        alert('Error: ' + (data.error || 'Unknown error'));
+      }
+    })
+    .catch(err => {
+      console.error('Error:', err);
+      alert('Failed to save data: ' + err.message);
+    });
+  }
+
+  async function loadData() {
+    try {
+      const res = await fetch('read_data.php');
+      if (!res.ok) throw new Error('Failed to load data');
+      const data = await res.json();
+      values = padOrTrim(data.current);
+      oldValues = padOrTrim(data.old);
+    } catch (e) {
+      console.warn('Could not load saved data:', e);
+      values = Array.from({ length: 24 }, () => 0);
+      oldValues = Array.from({ length: 24 }, () => 0);
+    }
+    renderUI();
+    updateChart();
+  }
+
+  loadData();
+</script>
+</body>
+</html>
